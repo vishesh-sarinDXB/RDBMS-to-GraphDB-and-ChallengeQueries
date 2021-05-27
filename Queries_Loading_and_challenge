@@ -1,0 +1,194 @@
+//Creating Nodes
+
+//Reads people file and creates new node for each person
+LOAD CSV WITH HEADERS FROM "file:///imdbf/people.csv" AS row FIELDTERMINATOR ';'
+CREATE (n: Person)
+SET n = row
+
+//Reads moviesratingsgenres file and creates new node for each movie
+LOAD CSV WITH HEADERS FROM "file:///imdbf/moviesratingsgenres.csv" AS row FIELDTERMINATOR ';'
+CREATE (n: Movie)
+SET n = row,
+n.movieid = toInteger(row.movieid),
+n.year = toInteger(row.year),
+n.rank = toFloat(row.rank),
+n.votes = toInteger(row.votes)
+
+//Reads actorid file and creates new node for each actorid
+LOAD CSV WITH HEADERS FROM "file:///imdbf/actorid.csv" AS row FIELDTERMINATOR ';'
+CREATE (n: actorid)
+SET n = row,
+n.actorid = toInteger(row.actorid)
+
+//Reads directorid file and creates new node for each directorid
+LOAD CSV WITH HEADERS FROM "file:///imdbf/directorid.csv" AS row FIELDTERMINATOR ';'
+CREATE (n: directorid)
+SET n = row,
+n.directorid = toInteger(row.directorid)
+
+//Reads writerid file and creates new node for each writerid
+LOAD CSV WITH HEADERS FROM "file:///imdbf/writerid.csv" AS row FIELDTERMINATOR ';'
+CREATE (n: writerid)
+SET n = row,
+n.writerid = toInteger(row.writerid)
+
+//Reads uniquerunningtimes file and creates new node for each running time
+LOAD CSV WITH HEADERS FROM "file:///imdbf/uniquerunningtimes.csv" AS row FIELDTERMINATOR ';'
+CREATE (n: runningtime)
+SET n = row,
+n.runningtime = toInteger(row.runningtime)
+
+//Creating Relationships
+
+//Creates index on person names
+CREATE INDEX ON :Person(names) 
+
+//Creates index on actorid
+CREATE INDEX ON :actorid(actorid)
+
+//Reads actornames file and uses it to create relationship from name to actorid nodes
+LOAD CSV WITH HEADERS FROM "file:///imdbf/actornames.csv" AS row FIELDTERMINATOR ';'
+MATCH (n:Person {names: row.name})
+MATCH (a:actorid {actorid: toInteger(row.actorid)})
+MERGE (n)-[r:HAS_ACTORID]->(a)
+
+
+//Reads directornames file and uses it to create relationship from name to directorid
+LOAD CSV WITH HEADERS FROM "file:///imdbf/directornames.csv" AS row FIELDTERMINATOR ';'
+MATCH (n:Person {names: row.name})
+MATCH (d:directorid {directorid: toInteger(row.directorid)})
+MERGE (n)-[r:HAS_DIRECTORID]->(d)
+
+//Reads writers file and uses it to create relationship from name to writerid
+LOAD CSV WITH HEADERS FROM "file:///imdbf/writers.csv" AS row FIELDTERMINATOR ';'
+MATCH (n:Person {names: row.name}) //Continued on Next Page
+MATCH (w:writerid {writerid: toInteger(row.writerid)})
+MERGE (n)-[r:HAS_WRITERID]->(w)
+
+//Reads mta file and uses it to create relationship from actorid to movie
+LOAD CSV WITH HEADERS FROM "file:///imdbf/mta.csv" AS row FIELDTERMINATOR ';'
+MATCH (n:Movie {movieid: toInteger(row.movieid)})
+MATCH (w:actorid {actorid: toInteger(row.actorid)})
+MERGE (w)-[r:ACTED_IN]->(n)
+
+//Reads mtd file and uses it to create relationship from directorid to movie
+LOAD CSV WITH HEADERS FROM "file:///imdbf/mtd.csv" AS row FIELDTERMINATOR ';'
+MATCH (n:Movie {movieid: toInteger(row.movieid)})
+MATCH (w:directorid {directorid: toInteger(row.directorid)})
+MERGE (w)-[r:DIRECTED]->(n)
+
+//Reads mtw file and uses it to create relationship from writerid to movie
+LOAD CSV WITH HEADERS FROM "file:///imdbf/mtw.csv" AS row FIELDTERMINATOR ';'
+MATCH (n:Movie {movieid: toInteger(row.movieid)})
+MATCH (w:writerid {writerid: toInteger(row.writerid)})
+MERGE (w)-[r:WROTE]->(n)
+
+//Reads moviestotimes file and uses it to create relationship from movie to running time
+LOAD CSV WITH HEADERS FROM "file:///imdbf/moviestotimes.csv" AS row FIELDTERMINATOR ';'
+MATCH (n:Movie {movieid: toInteger(row.movieid)})
+MATCH (w:runningtime {runningtime: toInteger(row.time)})
+MERGE (n)-[r:HAS_RUNNINGTIME]->(w)
+
+//Female Actors in Datset
+MATCH (a:actorid { sex: 'F' }) 
+RETURN count(*) AS TotalFemaleActors
+
+//Male Actors in Dataset
+MATCH (a:actorid { sex: 'M' }) 
+RETURN count(*) AS TotalMaleActors
+
+//CYPHER query that shows the number of female actors and the number of male actors as a single query
+MATCH (a:actorid { sex: 'M' })
+RETURN a.sex AS Sex, count(*) AS Total
+UNION ALL
+MATCH (a:actorid { sex: 'F' })
+RETURN a.sex AS Sex, count(*) AS Total
+
+//Movie titles and number of directors involved for movies with more than 6 directors
+MATCH (m:Movie)--(d:directorid)
+WITH m, COUNT(d) AS cnt
+WHERE cnt > 6
+RETURN m.title AS Title, cnt AS NumberOfDirectors
+
+//Number of movies with a running time of less than 10 minutes
+MATCH (m:Movie)--(t:runningtime) 
+WHERE t.runningtime <10 
+RETURN COUNT(m) AS MoviesLessThan10Minutes
+
+//Movie titles which star both ‘Ewan McGregor’ and ‘Robert Carlyle’ (i.e. both actors were in the same film)
+MATCH (:Person {names: 'Carlyle, Robert (I)'})--(:actorid)--(m:Movie)--(:actorid)--(:Person {names: 'McGregor, Ewan'})
+RETURN m.title AS Title
+
+//Number of movies directed by ‘Spielberg’  
+MATCH (p:Person)--(:directorid)--(m:Movie)
+WHERE p.names =~ 'Spielberg.*'
+RETURN COUNT(m) AS MoviesDirectedBySpielberg
+
+
+//Male or female actors that have worked together on more 10 films, include their names and number of films they’ve co-starred in. Needed to increase MaxHeapSize to 3GB to work. Results have repeated values
+MATCH (a:Person)--(:actorid)--(m:Movie)--(:actorid)--(b:Person)
+WITH a, b, COUNT(m) AS cnt
+WHERE cnt > 10
+RETURN DISTINCT a.names AS CoActor1, b.names AS CoActor2, cnt AS MoviesActedTogether
+
+//Number of movies released per decade as listed below (1960-69, 1970-79, 1980-89,1990-99,2000-2010) 
+MATCH (m:Movie)
+WHERE m.year >= 1960 AND m.year <= 1969
+WITH COUNT(m) AS decadeCount
+RETURN decadeCount, ['60s'] AS which //Continued on Next Page
+UNION ALL
+MATCH(m:Movie)
+WHERE m.year >= 1970 AND m.year <= 1979
+WITH COUNT(m) AS decadeCount
+RETURN decadeCount, ['70s'] AS which
+UNION ALL
+MATCH(m:Movie)
+WHERE m.year >= 1980 AND m.year <= 1989
+WITH COUNT(m) AS decadeCount
+RETURN decadeCount, ['80s'] AS which
+UNION ALL
+MATCH(m:Movie)
+WHERE m.year >= 1990 AND m.year <= 1999
+WITH COUNT(m) AS decadeCount
+RETURN decadeCount, ['90s'] AS which
+UNION ALL
+MATCH(m:Movie)
+WHERE m.year >= 2000 AND m.year <= 2010
+WITH COUNT(m) AS decadeCount
+RETURN decadeCount, ['00s'] AS which
+
+//Number of movies that have more female actors than male actors
+MATCH (t:Movie)--(a:actorid)
+WITH (CASE WHEN a.sex = 'F' THEN 1 ELSE 0 END) AS cntf, (CASE WHEN a.sex = 'M' THEN 1 ELSE 0 END) AS cntm, t AS t
+WITH sum(cntf) AS f, sum(cntm) AS m, t AS t
+WHERE f > m
+RETURN COUNT(t) AS MoviesWithMoreFemaleActors
+
+//Top 3 movie genres based on movies that have 10,000 or more votes, using average rank per movie genre as the metric.
+MATCH(n:Movie)
+WHERE n.votes >=10000
+WITH DISTINCT n.genre AS clt, avg(n.rank) AS rnk
+ORDER BY rnk DESC
+RETURN clt AS Genre, rnk AS AverageRank LIMIT 3
+
+//Shortest path between actors ‘Ewan McGregor’ and ‘Mark Hamill’ from the IMDB data subset
+MATCH p=shortestPath(
+(ewan:Person {names:"McGregor, Ewan"})-[*]-(hamill:Person {names:"Hamill, Mark (I)"})
+)
+RETURN p
+
+//Actors that have starred in 10 or more different film genres
+MATCH(m:Movie)--(a:actorid)--(p:Person)
+WITH collect(DISTINCT m.genre) AS clt, p AS p
+WITH size(clt) AS gn, p AS p
+WHERE gn >= 10
+RETURN gn AS NumberOfGenres, p.names AS ActorNames
+
+//Movies that have an actor/actress that also directed the movie
+MATCH (p:Person)--(:actorid)--(m:Movie)--(:directorid)--(p)
+RETURN COUNT(m) AS MoviesDirectedByActorInMovie
+
+//Movies that have been directed and written by an actor/actress that they didn’t act in
+MATCH (:actorid)--(p:Person)--(:directorid)--(m:Movie)--(:writerid)--(p)
+WHERE NOT (p)--(:actorid)--(m)
+RETURN COUNT(m) AS MoviesDirectedAndWrittenByActor
